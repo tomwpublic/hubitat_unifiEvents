@@ -1,0 +1,682 @@
+/*
+
+Copyright 2020 - tomw
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+-------------------------------------------
+
+Change history:
+
+1.0.0 - @tomw - Initial release
+
+*/
+
+metadata
+{
+    definition(name: "UniFi Controller", namespace: "tomw", author: "tomw", importUrl: "")
+    {
+        capability "Initialize"
+        capability "Refresh"
+        
+        attribute "commStatus", "string"
+        
+        command "createClientDevice", ["name", "mac"]
+    }
+}
+
+preferences
+{
+    section
+    {
+        input "controllerIP", "text", title: "UniFi controller IP", required: true
+        input "siteName", "text", title: "Site name", defaultValue: "default", required: true
+    }
+    section
+    {
+        input "username", "text", title: "Username", required: true
+        input "password", "password", title: "Password", required: true
+    }
+    section
+    {
+        input "refreshInterval", "number", title: "Refresh interval (seconds). 300s or longer is recommended value.", defaultValue: 300
+        input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: false
+    }
+    section
+    {
+        input "customPort", "bool", title: "Use custom port? (this is uncommon)", defaultValue: false
+        input name: "customPortNum", type: "number", title: "Custom port number", required: false
+    }
+}
+
+def logDebug(msg) 
+{
+    if (logEnable)
+    {
+        log.debug(msg)
+    }
+}
+
+def updated()
+{
+    configure()
+}
+
+def configure()
+{
+    state.clear()
+    initialize()
+}
+
+def initialize()
+{
+    sendEvent(name: "commStatus", value: "unknown")
+    try
+    {
+        closeEventSocket()
+        
+        
+        def isUniFiOS = isUniFiOS()        
+        if(null == isUniFiOS)
+        {
+            log.debug "initialize failed: check IP address or port of controller"
+            sendEvent(name: "commStatus", value: "error")
+            return
+        }
+        logDebug("$isUniFiOS")        
+        setUniFiOS(isUniFiOS)
+        
+        
+        refreshCookie()
+        
+        // lag for cookies to stabilize
+        runIn(2, initializeChildren)
+        
+        // run this to populate a full list of known clients
+        //runIn(4, queryKnownClients)
+        runIn(6, openEventSocket)
+        
+        // run this to populate a list of currently active clients.  may take several seconds to execute.
+        //runIn(10, queryActiveClients)
+        
+        sendEvent(name: "commStatus", value: "good")
+    }
+    catch (Exception e)
+    {
+        logDebug("initialize() failed: ${e.message}")
+        sendEvent(name: "commStatus", value: "error")
+    }
+}
+
+def initializeChildren()
+{
+    for(child in getChildDevices())
+    {
+        child.initialize()
+    }
+}
+
+def uninstalled()
+{
+    unschedule()
+    
+    invalidateCookie()
+}
+
+def refresh()
+{
+    refreshChildren()
+    
+    // schedule next refresh
+    runIn(refreshInterval.toFloat().toInteger(), refresh)
+}
+
+def refreshChildren()
+{
+    for(child in getChildDevices())
+    {
+        child.refresh()
+    }
+}
+
+def parse(String message)
+{
+    //logDebug("parse: ${message}")
+    try
+    {
+        def msgJson = new groovy.json.JsonSlurper().parseText(message)
+        for(thisMsg in msgJson.data)
+        {
+            if(thisMsg.key in ["EVT_WU_Connected", "EVT_WU_Disconnected", "EVT_LU_Connected", "EVT_LU_Disconnected"])
+            {
+                //logDebug("connection observed!")
+                
+                child = findChildDevice(thisMsg.user)
+                if(child)
+                {
+                    child.refreshFromParent(['presence': ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected"]) ? "present" : "not present"), 'ap': (thisMsg.ap ?: "unknown")])
+                }
+            }
+        }
+    }
+    catch (Exception e)
+    {
+        logDebug("parse() failed: ${e.message}")
+    }
+}
+
+def webSocketStatus(String message)
+{
+    logDebug("webSocketStatus: ${message}")
+}
+
+def openEventSocket()
+{
+    logDebug("interfaces.webSocket.connect(${getWssURI(siteName)}, headers: ${genHeadersWss()}, ignoreSSLIssues: true)")
+    interfaces.webSocket.connect(getWssURI(siteName), headers: genHeadersWss(), ignoreSSLIssues: true, perMessageDeflate: false)
+}
+
+def closeEventSocket()
+{
+    interfaces.webSocket.close()
+}
+
+def refreshCookie()
+{
+    try
+    {
+        login()        
+        sendEvent(name: "commStatus", value: "good")
+    }
+    catch (Exception e)
+    {
+        logDebug("refreshCookie() failed: ${e.message}")
+        sendEvent(name: "commStatus", value: "error")
+        throw(e)
+    }
+}
+
+def invalidateCookie()
+{
+    try
+    {
+        logout()        
+        sendEvent(name: "commStatus", value: "good")
+    }
+    catch (Exception e)
+    {
+        logDebug("invalidateCookie() failed: ${e.message}")
+        sendEvent(name: "commStatus", value: "error")
+        // don't throw to caller, because this should always appear to succeed
+    }
+}
+
+def isUniFiOS()
+{
+    def isUniFiOS
+    
+    try
+    {
+        // check for non-UniFi OS        
+        httpPost([uri: "https://${controllerIP}:${(customPort ? customPortNum : 8443)}", ignoreSSLIssues: true])
+        { resp -> if(resp.getStatus().toInteger() == 302) { isUniFiOS = false } }
+        
+        // return now because we are done
+        return isUniFiOS
+    }
+    catch(Exception e)
+    {
+        logDebug("httpPostExec() failed: ${e.toString()}")
+        // failed, but we don't know why (yet)
+    }
+    
+    try
+    {
+        // check for UniFi OS        
+        httpPost([uri: "https://${controllerIP}:${(customPort ? customPortNum : 443)}", ignoreSSLIssues: true])
+        { resp -> if(resp.getStatus().toInteger() == 200) { isUniFiOS = true } }
+        
+        // ok to fall through
+    }
+    catch(Exception e)
+    {
+        logDebug("httpPostExec() failed: ${e.toString()}")
+        // failed, and we know both failed so consider warning user accordingly
+    }
+    
+    return isUniFiOS
+}
+
+def checkCommStatus()
+{
+    switch(device.currentValue("commStatus"))
+    {
+        case "good":
+            logDebug("checkCommStatus() success")
+            return true
+        
+        case "error":
+        case "unknown":
+        default:
+            logDebug("checkCommStatus() failed")
+            return false
+    }
+}
+
+def genParamsAuth(operation)
+{
+    def params =
+        [
+            uri: getBaseURI() + (operation == "login" ? getLoginSuffix() : getLogoutSuffix()),
+            headers:
+            [
+                'Content-Type': "application/json",
+            ],
+            body: "{\"username\": \"${username}\", \"password\": \"${password}\",\"strict\": \"true\"}",
+            ignoreSSLIssues: true,
+        ]
+ 
+    return params
+}
+
+def genParamsMain(suffix, body = null)
+{
+    def params =
+        [
+            uri: getBaseURI() + getAPISuffix() + suffix,
+            headers:
+            [
+                'Cookie': "${getCookie()}",
+            ],
+            ignoreSSLIssues: true,
+        ]
+    
+    if(body)
+    {
+        params['body'] = body
+    }
+ 
+    return params
+}
+
+def genHeadersWss()
+{
+    def headers =
+        [
+        'Cookie': "${getCookie()}",
+        'User-Agent': "UniFi Events"
+        ]
+    
+    return headers
+}
+
+def getBaseURI()
+{
+    if(!getUniFiOS())
+    {
+        return "https://${controllerIP}:${(customPort ? customPortNum : 8443)}/"
+    }
+    else
+    {
+        return "https://${controllerIP}:${(customPort ? customPortNum : 443)}/"
+    }
+}
+
+def getLoginSuffix()
+{
+    if(!getUniFiOS())
+    {
+        return "api/login"
+    }
+    else
+    {
+        return "api/auth/login"
+    }
+}
+
+def getLogoutSuffix()
+{
+    if(!getUniFiOS())
+    {
+        return "api/logout"
+    }
+    else
+    {
+        return "api/auth/logout"
+    }
+}
+
+def getAPISuffix()
+{
+    if(!getUniFiOS())
+    {
+        return "api/s/${siteName}/"
+    }
+    else
+    {
+        return "proxy/network/api/s/${siteName}/"
+    }
+}
+
+def getWssURI(site)
+{
+    if(!getUniFiOS())
+    {
+        return "wss://${controllerIP}::${(customPort ? customPortNum : 8443)}/wss/s/${site}/events"
+    }
+    else
+    {
+        return "wss://${controllerIP}:${(customPort ? customPortNum : 443)}/proxy/network/wss/s/${site}/events"
+    }
+}
+
+def login()
+{
+    try
+    {
+        def resp = httpExec("POST", genParamsAuth("login"), true)
+        
+        def cookie
+        def csrf
+        resp?.getHeaders()?.each
+        {
+            if((it.value.split('=')[0].toString() == "unifises") || (it.value.split('=')[0].toString() == "TOKEN"))
+            {
+                cookie = it.value.split(';')[0]
+            }
+            if(it.value.split('=')[0].toString() == "csrf_token")
+            {
+                csrf = it.value.split(';')[0]
+            }
+        }
+        
+        setCookie(cookie)
+        setCsrf(csrf)
+        
+        // try something to verify
+        querySelf()
+    }
+    catch (Exception e)
+    {
+        logDebug("login() failed: ${e.message}")
+        throw(e)
+    }
+    
+}
+
+def logout()
+{
+    // swallow exceptions on logout()
+    httpExec("POST", genParamsAuth("logout"), false)
+}
+
+def querySelf()
+{
+    try
+    {
+        def resp = httpExecWithAuthCheck("GET", genParamsMain("self"), true)
+        logDebug("${resp.data}")
+    }
+    catch (Exception e)
+    {
+        sendEvent(name: "commStatus", value: "error")
+        throw e
+    }   
+}
+
+def queryActiveClients()
+{
+    try
+    {
+        def resp = httpExecWithAuthCheck("GET", genParamsMain("stat/sta"), true)
+        logDebug("${resp.data}")
+        
+        // collect all of the MACs
+        state.currentMacList = []
+        resp.data.data.collect {thisClient -> state.currentMacList.add(thisClient.mac)}
+    }
+    catch (Exception e)
+    {
+        sendEvent(name: "commStatus", value: "error")
+        throw e
+    }   
+}
+
+def queryKnownClients()
+{
+    try
+    {
+        def resp = httpExecWithAuthCheck("GET", genParamsMain("rest/user"), true)
+        logDebug("${resp.data}")
+        
+        // collect all of the MACs
+        state.knownMacList = []
+        resp.data.data.collect {thisClient -> state.knownMacList.add(thisClient.mac)}
+    }
+    catch (Exception e)
+    {
+        sendEvent(name: "commStatus", value: "error")
+        throw e
+    }   
+}
+
+def queryClientByMac(mac)
+{
+    try
+    {
+        def resp = httpExecWithAuthCheck("GET", genParamsMain("stat/sta/${mac}"), true)
+        logDebug("${resp.data}")
+        return resp.data
+    }
+    catch (Exception e)
+    {
+        //client is presumably offline -- which returns error 400
+        return null
+    }   
+}
+
+def childName(name)
+{
+    return "${name.toString()}"
+}
+
+def childDni(id)
+{
+    return "${device.getName()}-${id.toString()}"
+}
+
+def findChildDevice(id)
+{
+    return getChildDevice(childDni(id))
+}
+
+def createClientDevice(name, mac)
+{
+    def child
+    try
+    {
+        child = addChildDevice("UniFi Client", childDni(mac), [label:"${childName(name)}", isComponent:false, name:"${childName(name)}"])
+        if(child)
+        {
+            child.setupFromParent(['mac': mac])
+        }
+    }
+    catch (Exception e)
+    {
+        logDebug("createChildDevice() failed: ${e.message}")
+    }
+}
+
+def refreshFromChild(mac)
+{
+    def resp = queryClientByMac(mac)
+    
+    findChildDevice(mac)?.refreshFromParent(['presence': (resp ? "present" : "not present"), 'ap': (resp ? resp.data[0].ap_mac : "unknown")])
+}
+
+def setCookie(cookie)
+{
+    state.cookie = cookie
+}
+
+def getCookie()
+{
+    return state.cookie
+}
+
+def setCsrf(csrf)
+{
+    state.csrf = csrf
+}
+
+def getCsrf()
+{
+    return state.csrf
+}
+
+def setUniFiOS(isUniFiOS)
+{
+    state.UniFiOS = isUniFiOS
+}
+
+def getUniFiOS()
+{
+    return state.UniFiOS
+}
+    
+def httpGetExec(params, throwToCaller = false)
+{
+    logDebug("httpGetExec(${params})")
+    
+    try
+    {
+        def result
+        httpGet(params)
+        { resp ->
+            if (resp)
+            {
+                //logDebug("resp.data = ${resp.data}")
+                result = resp
+            }
+        }
+        return result
+    }
+    catch (Exception e)
+    {
+        logDebug("httpGetExec() failed: ${e.message}")
+        logDebug("status = ${e.getResponse().getStatus().toInteger()}")
+        if(throwToCaller)
+        {
+            throw(e)
+        }
+    }
+}
+
+def httpPostExec(params, throwToCaller = false)
+{
+    logDebug("httpPostExec(${params})")
+    
+    try
+    {
+        def result
+        httpPost(params)
+        { resp ->
+            if (resp)
+            {
+                //logDebug("resp.data = ${resp.data}")
+                result = resp
+            }
+        }
+        return result
+    }
+    catch (Exception e)
+    {
+        logDebug("httpPostExec() failed: ${e.message}")
+        logDebug("status = ${e.getResponse().getStatus().toInteger()}")
+        if(throwToCaller)
+        {
+            throw(e)
+        }
+    }
+}
+
+def httpExec(operation, params, throwToCaller = false)
+{
+    def res
+    
+    switch(operation)
+    {
+        default:
+            logDebug("unsupported Http operation")
+            break
+        
+        case "POST":
+            res = httpPostExec(params, throwToCaller)
+            break
+        
+        case "GET":
+            res = httpGetExec(params, throwToCaller)
+            break
+    }
+    
+    return res
+}
+
+def httpExecWithAuthCheck(operation, params, throwToCaller = false)
+{
+    def res
+    try
+    {
+        res = httpExec(operation, params, true)                
+        return res
+    }
+    catch (Exception e)
+    {
+        if(e.getResponse().getStatus().toInteger() == 401)
+        {
+            // 401 Unauthorized
+            try
+            {
+                logDebug("httpExecWithAuthCheck() auth failed.  retrying...")
+                refreshCookie()                
+                
+                // update with new Auth token
+                params['headers']['Cookie'] = "${getCookie()}"
+                
+                // workaround for bug?
+                if(null == params['ignoreSSLIssues'])
+                {
+                    params['ignoreSSLIssues']= true
+                }
+                
+                res = httpExec(operation, params, true)
+                return res
+            }
+            catch (Exception e2)
+            {
+                logDebug("httpExecWithAuthCheck() failed: ${e2.message}")
+                if(throwToCaller)
+                {
+                    throw(e2)
+                }
+            }
+        }
+        else
+        {
+            if(throwToCaller)
+            {
+                throw(e)
+            }
+        }
+    }
+}

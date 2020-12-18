@@ -1,0 +1,27 @@
+{
+  "packageName": "hubitat_unifiEvents",
+  "author": "tomw",
+  "version": "1.0.0",
+  "minimumHEVersion": "2.1.9",
+  "dateReleased": "2020-12-16",
+  "drivers": [
+    {
+      "id": "048abe50-37fd-4afe-bb08-e9a42586eb41",
+      "name": "UniFi Controller",
+      "namespace": "tomw",
+      "location": "https://raw.githubusercontent.com/tomwpublic/hubitat_unifi/master/unifiController",
+      "required": true
+    },
+    {
+      "id": "f2e42d13-3e8c-42d8-b97e-88b3f7bf1e40",
+      "name": "UniFi Client",
+      "namespace": "tomw",
+      "location": "https://raw.githubusercontent.com/tomwpublic/hubitat_unifi/master/unifiClient",
+      "required": true
+    }
+  ],
+  "licenseFile": "https://raw.githubusercontent.com/tomwpublic/hubitat_unifi/master/LICENSE",
+  "releaseNotes": "1.0.0 - @tomw - Initial release.",
+  "documentationLink": "https://github.com/tomwpublic/hubitat_unifi/blob/master/README.md",
+  "communityLink": "TODO"
+}
