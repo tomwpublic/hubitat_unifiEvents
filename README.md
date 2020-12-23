@@ -1,8 +1,8 @@
 # hubitat_unifiEvents
 
-This provides PresenceSensor driver capabilities for Hubitat with UniFi network controllers.  The implementation utilizes the UniFi websocket interface to provide the most timely presence updates without polling the server.
+This provides PresenceSensor driver capabilities for Hubitat with UniFi network controllers.  The implementation utilizes the UniFi websocket interface to provide the most timely presence updates without polling the controller
 
-The unifiController driver also implements login and session support for the controller so that other custom queries and attributes can be supported.
+The unifiController driver also implements login and session support for the controller so that other custom queries and attributes can be supported.  There is an option to log all events that occur so that they can be further inspected.  This may log a lot of events depending on the size of your network.
 
 
 Much of this implementation is based on the work shared here:
@@ -21,6 +21,8 @@ Special thanks to @snell for their collaboration and @Bago for their troubleshoo
     * username and password for your UniFi controller web interface
     * the site name as reflected in the URL of your controller, not the web interface (**this is important**)
         * for example, in *italics*: https<k>://10.0.0.2:8443/manage/site/*default*/dashboard or https<k>://10.10.10.1/network/site/*default*/dashboard
+* Determine whether you want to log all incoming events and enable that option if you prefer.
+   * Events will show up in the eventStream attribute in real time and will be logged in the event history of the controller device.
 
 # Usage instructions:
 
