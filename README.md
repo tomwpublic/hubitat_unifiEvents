@@ -2,7 +2,7 @@
 
 This provides PresenceSensor driver capabilities for Hubitat with UniFi network controllers.  The implementation utilizes the UniFi websocket interface to provide the most timely presence updates without polling the controller
 
-The unifiController driver also implements login and session support for the controller so that other custom queries and attributes can be supported.  There is an option to log all events that occur so that they can be further inspected.  This may log a lot of events depending on the size of your network.
+The unifiController driver also implements login and session support for the controller so that other custom queries and attributes can be supported.  There is an option to log all events that occur so that they can be further inspected.
 
 
 Much of this implementation is based on the work shared here:
