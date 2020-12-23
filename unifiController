@@ -30,6 +30,7 @@ metadata
         capability "Refresh"
         
         attribute "commStatus", "string"
+        attribute "eventStream", "string"
         
         command "createClientDevice", ["name", "mac"]
     }
@@ -41,6 +42,7 @@ preferences
     {
         input "controllerIP", "text", title: "UniFi controller IP", required: true
         input "siteName", "text", title: "Site name", defaultValue: "default", required: true
+        input name: "logEvents", type: "bool", title: "Log all events", defaultValue: false
     }
     section
     {
@@ -64,6 +66,14 @@ def logDebug(msg)
     if (logEnable)
     {
         log.debug(msg)
+    }
+}
+
+def logEvent(msg)
+{
+    if (logEvents)
+    {
+        sendEvent(name: "eventStream", value: msg)
     }
 }
 
@@ -154,17 +164,42 @@ def parse(String message)
     //logDebug("parse: ${message}")
     try
     {
+        // log all events (if enabled)
+        logEvent(message)
+        
+        // prep for and handle specific events
         def msgJson = new groovy.json.JsonSlurper().parseText(message)
         for(thisMsg in msgJson.data)
         {
-            if(thisMsg.key in ["EVT_WU_Connected", "EVT_WU_Disconnected", "EVT_LU_Connected", "EVT_LU_Disconnected"])
+            // connected/disconnected events, for client presence status
+            if(thisMsg.key in
+               [
+                "EVT_WU_Connected",
+                "EVT_WU_Disconnected",
+                "EVT_LU_Connected",
+                "EVT_LU_Disconnected",
+                "EVT_WG_Connected",
+                "EVT_WG_Disconnected",
+                "EVT_LG_Connected",
+                "EVT_LG_Disconnected"
+               ])
             {
                 //logDebug("connection observed!")
                 
-                child = findChildDevice(thisMsg.user)
+                if(!(thisMsg.user || thisMsg.guest))
+                {
+                    // not sure why happened, but we don't have the data we need
+                    continue
+                }
+                
+                child = findChildDevice(thisMsg.user ?: thisMsg.guest)
                 if(child)
                 {
-                    child.refreshFromParent(['presence': ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected"]) ? "present" : "not present"), 'ap': (thisMsg.ap ?: "unknown")])
+                    child.refreshFromParent(
+                        [
+                            'presence': ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected", "EVT_WG_Connected", "EVT_LG_Connected"]) ? "present" : "not present"),
+                            'ap': (thisMsg.ap ?: "unknown")
+                        ])
                 }
             }
         }
