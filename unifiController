@@ -34,6 +34,8 @@ metadata
         attribute "eventStream", "string"
         
         command "createClientDevice", ["name", "mac"]
+        
+        command "reportEventTypeHistogram", ["sSize"]
     }
 }
 
@@ -61,6 +63,45 @@ preferences
         input name: "customPortNum", type: "number", title: "Custom port number", required: false
     }
 }
+
+def reportEventTypeHistogram(sSize)
+{
+    def eventsCount = [:]
+    
+    def evtJson
+    def slurper = new groovy.json.JsonSlurper()
+    
+    def count = 0
+    
+    try
+    {
+        device.events([max: sSize.toInteger()]).collect
+        {thisEvent -> 
+            count++
+            evtJson = slurper.parseText(thisEvent.value)
+            
+            for(thisData in evtJson.data)
+            {
+                if(eventsCount.containsKey(thisData?.key))
+                {
+                    // known event, update count
+                    eventsCount[thisData?.key]++
+                    continue
+                }
+                
+                // new event
+                eventsCount[thisData?.key] = 1
+            }
+        }
+    }
+    catch(Exception e)
+    {
+       logDebug("error: ${e.message}")
+    }
+    
+    log.info("reportEventTypeHistogram(): processed $count")
+    log.info("eventsCount = ${eventsCount}")
+}    
 
 def logDebug(msg) 
 {
