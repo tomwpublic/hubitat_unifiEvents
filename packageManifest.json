@@ -1,7 +1,7 @@
 {
   "packageName": "hubitat_unifiEvents",
   "author": "tomw",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "minimumHEVersion": "2.1.9",
   "dateReleased": "2020-12-18",
   "drivers": [
@@ -21,7 +21,7 @@
     }
   ],
   "licenseFile": "https://raw.githubusercontent.com/tomwpublic/hubitat_unifiEvents/main/LICENSE",
-  "releaseNotes": "1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.\n1.0.0 - @tomw - Initial release.",
+  "releaseNotes": "1.0.2 - @tomw - Fix bug with repeated retries on failed login.\n1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.\n1.0.0 - @tomw - Initial release.",
   "documentationLink": "https://github.com/tomwpublic/hubitat_unifiEvents/blob/main/README.md",
   "communityLink": "https://community.hubitat.com/u/tomw/summary"
 }

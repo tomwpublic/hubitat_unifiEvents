@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.2 - @tomw - Fix bug with repeated retries on failed login.
 1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
 1.0.0 - @tomw - Initial release
 
@@ -104,9 +105,8 @@ def initialize()
             sendEvent(name: "commStatus", value: "error")
             return
         }
-        logDebug("$isUniFiOS")        
-        setUniFiOS(isUniFiOS)
-        
+     
+        setUniFiOS(isUniFiOS)        
         
         refreshCookie()
         
@@ -441,9 +441,6 @@ def login()
         
         setCookie(cookie)
         setCsrf(csrf)
-        
-        // try something to verify
-        querySelf()
     }
     catch (Exception e)
     {
