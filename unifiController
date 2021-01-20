@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.3 - @tomw - Added websocket error handling to help ensure uptime of connection.
 1.0.2 - @tomw - Fix bug with repeated retries on failed login.
 1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
 1.0.0 - @tomw - Initial release
@@ -53,7 +54,7 @@ preferences
     }
     section
     {
-        input "refreshInterval", "number", title: "Refresh interval (seconds). 300s or longer is recommended value.", defaultValue: 300
+        input "refreshInterval", "number", title: "Refresh/Reconnect interval (seconds). 300s or longer is recommended value.", defaultValue: 300
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: false
     }
     section
@@ -216,7 +217,28 @@ def parse(String message)
 
 def webSocketStatus(String message)
 {
-    logDebug("webSocketStatus: ${message}")
+    logDebug("webSocketStatus: ${message}")    
+    
+    // thanks for the idea: https://community.hubitat.com/t/websocket-client/11843/15
+    if(message.startsWith("status: open"))
+	{
+		sendEvent(name: "commStatus", value: "good")
+		return
+	} 
+	else if(message.startsWith("status: closing"))
+	{
+		sendEvent(name: "commStatus", value: "unknown")
+		return
+	} 
+	else if(message.startsWith("failure:"))
+	{
+		sendEvent(name: "commStatus", value: "error")
+        
+        // try to re-connect in 5 minutes
+        runIn(refreshInterval.toFloat().toInteger(), initialize)
+        
+		return
+	} 
 }
 
 def openEventSocket()
