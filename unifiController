@@ -104,6 +104,8 @@ def initialize()
         {
             log.debug "initialize failed: check IP address or port of controller"
             sendEvent(name: "commStatus", value: "error")
+            
+            reinitialize()
             return
         }
      
@@ -127,6 +129,8 @@ def initialize()
     {
         logDebug("initialize() failed: ${e.message}")
         sendEvent(name: "commStatus", value: "error")
+        
+        reinitialize()
     }
 }
 
