@@ -102,11 +102,10 @@ def initialize()
         def isUniFiOS = isUniFiOS()        
         if(null == isUniFiOS)
         {
-            log.debug "initialize failed: check IP address or port of controller"
+            def errMsg = "check IP address, port, or connection to controller"
             sendEvent(name: "commStatus", value: "error")
             
-            reinitialize()
-            return
+            throw new Exception(errMsg)
         }
      
         setUniFiOS(isUniFiOS)        
