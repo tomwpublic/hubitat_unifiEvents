@@ -103,8 +103,6 @@ def initialize()
         if(null == isUniFiOS)
         {
             def errMsg = "check IP address, port, or connection to controller"
-            sendEvent(name: "commStatus", value: "error")
-            
             throw new Exception(errMsg)
         }
      
