@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.4 - @tomw - Improved websocket error handling.
 1.0.3 - @tomw - Added websocket error handling to help ensure uptime of connection.
 1.0.2 - @tomw - Fix bug with repeated retries on failed login.
 1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
@@ -96,15 +97,13 @@ def initialize()
     sendEvent(name: "commStatus", value: "unknown")
     try
     {
-        closeEventSocket()
-        
+        closeEventSocket()        
         
         def isUniFiOS = isUniFiOS()        
         if(null == isUniFiOS)
         {
-            log.debug "initialize failed: check IP address or port of controller"
-            sendEvent(name: "commStatus", value: "error")
-            return
+            def errMsg = "check IP address, port, or connection to controller"
+            throw new Exception(errMsg)
         }
      
         setUniFiOS(isUniFiOS)        
@@ -127,6 +126,8 @@ def initialize()
     {
         logDebug("initialize() failed: ${e.message}")
         sendEvent(name: "commStatus", value: "error")
+        
+        reinitialize()
     }
 }
 
@@ -217,28 +218,51 @@ def parse(String message)
 
 def webSocketStatus(String message)
 {
-    logDebug("webSocketStatus: ${message}")    
+    logDebug("webSocketStatus: ${message}")
     
     // thanks for the idea: https://community.hubitat.com/t/websocket-client/11843/15
     if(message.startsWith("status: open"))
-	{
-		sendEvent(name: "commStatus", value: "good")
-		return
-	} 
-	else if(message.startsWith("status: closing"))
-	{
-		sendEvent(name: "commStatus", value: "unknown")
-		return
-	} 
-	else if(message.startsWith("failure:"))
-	{
-		sendEvent(name: "commStatus", value: "error")
+    {        
+        sendEvent(name: "commStatus", value: "good")
         
-        // try to re-connect in 5 minutes
-        runIn(refreshInterval.toFloat().toInteger(), initialize)
+        state.reconnectDelay = 1
+        state.wasExpectedClose = false
         
-		return
-	} 
+        return
+    }
+    else if(message.startsWith("status: closing"))
+    {
+        sendEvent(name: "commStatus", value: "no events")
+        if(state.wasExpectedClose)
+        {
+            state.wasExpectedClose = false
+            return
+        }
+        
+        reinitialize()
+        
+        return
+    }
+    else if(message.startsWith("failure:"))
+    {
+        sendEvent(name: "commStatus", value: "error")        
+        reinitialize()
+        
+        return
+    }
+}
+
+def reinitialize()
+{
+    // thanks @ogiewon for the example
+    
+    // first delay is 2 seconds, doubles every time
+    def delayCalc = (state.reconnectDelay ?: 1) * 2    
+    // upper limit is 600s
+    def reconnectDelay = delayCalc <= 600 ? delayCalc : 600
+    
+    state.reconnectDelay = reconnectDelay
+    runIn(reconnectDelay, initialize)
 }
 
 def openEventSocket()
@@ -250,6 +274,10 @@ def openEventSocket()
 def closeEventSocket()
 {
     interfaces.webSocket.close()
+    state.wasExpectedClose = true
+    
+    // wait for state to catch up
+    pauseExecution(500)
 }
 
 def refreshCookie()
@@ -297,7 +325,7 @@ def isUniFiOS()
     }
     catch(Exception e)
     {
-        logDebug("httpPostExec() failed: ${e.toString()}")
+        //logDebug("isUniFiOS() check #1 failed: ${e.toString()}")
         // failed, but we don't know why (yet)
     }
     
@@ -311,7 +339,7 @@ def isUniFiOS()
     }
     catch(Exception e)
     {
-        logDebug("httpPostExec() failed: ${e.toString()}")
+        //logDebug("isUniFiOS() check #2 failed: ${e.toString()}")
         // failed, and we know both failed so consider warning user accordingly
     }
     
