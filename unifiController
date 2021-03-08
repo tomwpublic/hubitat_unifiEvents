@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.5 - @tomw - Bugfixes for websocket error handling.
 1.0.4 - @tomw - Improved websocket error handling.
 1.0.3 - @tomw - Added websocket error handling to help ensure uptime of connection.
 1.0.2 - @tomw - Fix bug with repeated retries on failed login.
@@ -226,16 +227,16 @@ def webSocketStatus(String message)
         sendEvent(name: "commStatus", value: "good")
         
         state.reconnectDelay = 1
-        state.wasExpectedClose = false
+        setWasExpectedClose(false)
         
         return
     }
     else if(message.startsWith("status: closing"))
     {
         sendEvent(name: "commStatus", value: "no events")
-        if(state.wasExpectedClose)
+        if(getWasExpectedClose())
         {
-            state.wasExpectedClose = false
+            setWasExpectedClose(false)
             return
         }
         
@@ -273,11 +274,11 @@ def openEventSocket()
 
 def closeEventSocket()
 {
-    interfaces.webSocket.close()
-    state.wasExpectedClose = true
-    
+    setWasExpectedClose(true)
     // wait for state to catch up
     pauseExecution(500)
+    
+    interfaces.webSocket.close()
 }
 
 def refreshCookie()
@@ -638,6 +639,16 @@ def setUniFiOS(isUniFiOS)
 def getUniFiOS()
 {
     return state.UniFiOS
+}
+
+def setWasExpectedClose(wasExpected)
+{
+    state.wasExpectedClose = wasExpected
+}
+
+def getWasExpectedClose()
+{
+    return state.wasExpectedClose
 }
     
 def httpGetExec(params, throwToCaller = false)
