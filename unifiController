@@ -274,11 +274,18 @@ def openEventSocket()
 
 def closeEventSocket()
 {
-    setWasExpectedClose(true)
-    // wait for state to catch up
-    pauseExecution(500)
-    
-    interfaces.webSocket.close()
+    try
+    {
+        setWasExpectedClose(true)
+        // wait for state to catch up
+        pauseExecution(500)
+        
+        interfaces.webSocket.close()
+    }
+    catch (Exception e)
+    {
+        // swallow errors
+    }
 }
 
 def refreshCookie()
