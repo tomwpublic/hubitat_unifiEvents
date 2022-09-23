@@ -1,7 +1,7 @@
 {
   "packageName": "hubitat_unifiEvents",
   "author": "tomw",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "minimumHEVersion": "2.1.9",
   "dateReleased": "2020-12-18",
   "drivers": [
@@ -21,7 +21,7 @@
     }
   ],
   "licenseFile": "https://raw.githubusercontent.com/tomwpublic/hubitat_unifiEvents/main/LICENSE",
-  "releaseNotes": "1.0.6 - tomw - Add `Refresh interval` option to work around recent UniFi controller reliability issues.  To enable on existing UniFi Client child devices, open the child device page and Save Preferences.\n1.0.5 - tomw - Bugfixes for websocket error handling.\n1.0.4 - tomw - Improved websocket error handling.\n1.0.3 - tomw - Added websocket error handling to help ensure uptime of connection.\n1.0.2 - tomw - Fix bug with repeated retries on failed login.\n1.0.1 - tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.\n1.0.0 - tomw - Initial release.",
+  "releaseNotes": "1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.\n1.0.6 - tomw - Add `Refresh interval` option to work around recent UniFi controller reliability issues.  To enable on existing UniFi Client child devices, open the child device page and Save Preferences.\n1.0.5 - tomw - Bugfixes for websocket error handling.\n1.0.4 - tomw - Improved websocket error handling.\n1.0.3 - tomw - Added websocket error handling to help ensure uptime of connection.\n1.0.2 - tomw - Fix bug with repeated retries on failed login.\n1.0.1 - tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.\n1.0.0 - tomw - Initial release.",
   "documentationLink": "https://github.com/tomwpublic/hubitat_unifiEvents/blob/main/README.md",
   "communityLink": "https://community.hubitat.com/u/tomw/summary"
 }
