@@ -18,12 +18,13 @@ limitations under the License.
 
 Change history:
 
-1.0.5 - @tomw - Bugfixes for websocket error handling.
-1.0.4 - @tomw - Improved websocket error handling.
-1.0.3 - @tomw - Added websocket error handling to help ensure uptime of connection.
-1.0.2 - @tomw - Fix bug with repeated retries on failed login.
-1.0.1 - @tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
-1.0.0 - @tomw - Initial release
+1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
+1.0.5 - tomw - Bugfixes for websocket error handling.
+1.0.4 - tomw - Improved websocket error handling.
+1.0.3 - tomw - Added websocket error handling to help ensure uptime of connection.
+1.0.2 - tomw - Fix bug with repeated retries on failed login.
+1.0.1 - tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
+1.0.0 - tomw - Initial release
 
 */
 
@@ -163,6 +164,14 @@ def refreshChildren()
     }
 }
 
+def writeDeviceMacCmd(mac, cmd, manager = "stamgr")
+{
+    def body = groovy.json.JsonOutput.toJson([mac: mac, cmd: cmd])
+    def params = genParamsMain("cmd/${manager}", body)
+    
+    return httpExecWithAuthCheck("POST", params)
+}
+
 def parse(String message)
 {
     //logDebug("parse: ${message}")
@@ -204,8 +213,8 @@ def parse(String message)
                 {
                     child.refreshFromParent(
                         [
-                            'presence': ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected", "EVT_WG_Connected", "EVT_LG_Connected"]) ? "present" : "not present"),
-                            'ap': (thisMsg.ap ?: "unknown")
+                            presence: ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected", "EVT_WG_Connected", "EVT_LG_Connected"]) ? "present" : "not present"),
+                            ap: (thisMsg.ap ?: "unknown")
                         ])
                 }
             }
@@ -372,6 +381,9 @@ def checkCommStatus()
 
 def genParamsAuth(operation)
 {
+    def body = [username: username, password: password, strict: true]
+    body = groovy.json.JsonOutput.toJson(body)
+    
     def params =
         [
             uri: getBaseURI() + (operation == "login" ? getLoginSuffix() : getLogoutSuffix()),
@@ -379,7 +391,8 @@ def genParamsAuth(operation)
             [
                 'Content-Type': "application/json",
             ],
-            body: "{\"username\": \"${username}\", \"password\": \"${password}\",\"strict\": \"true\"}",
+            
+            body: body,
             ignoreSSLIssues: true,
         ]
  
@@ -393,7 +406,8 @@ def genParamsMain(suffix, body = null)
             uri: getBaseURI() + getAPISuffix() + suffix,
             headers:
             [
-                'Cookie': "${getCookie()}",
+                Cookie: getCookie(),
+                'X-CSRF-Token': getCsrf()
             ],
             ignoreSSLIssues: true,
         ]
@@ -410,8 +424,8 @@ def genHeadersWss()
 {
     def headers =
         [
-        'Cookie': "${getCookie()}",
-        'User-Agent': "UniFi Events"
+            Cookie: "${getCookie()}",
+            'User-Agent': "UniFi Events"
         ]
     
     return headers
@@ -487,13 +501,21 @@ def login()
         def csrf
         resp?.getHeaders()?.each
         {
-            if((it.value.split('=')[0].toString() == "unifises") || (it.value.split('=')[0].toString() == "TOKEN"))
+            if(["unifises", "TOKEN"].contains(it.value?.split('=')?.getAt(0)?.toString()))
             {
-                cookie = it.value.split(';')[0]
+                cookie = it?.value?.split(';')?.getAt(0)
             }
-            if(it.value.split('=')[0].toString() == "csrf_token")
+            
+            if(it.value?.split('=')?.getAt(0)?.toString() == "csrf_token")
             {
-                csrf = it.value.split(';')[0]
+                // this is probably a controller NOT on UniFi OS
+                csrf = it.value.split(';')?.getAt(0)?.split('=')?.getAt(1)
+            }
+            
+            if(it.name == "X-CSRF-Token")
+            {
+                // this is probably a controller on UniFi OS
+                csrf = it.value
             }
         }
         
@@ -615,7 +637,14 @@ def refreshFromChild(mac)
 {
     def resp = queryClientByMac(mac)
     
-    findChildDevice(mac)?.refreshFromParent(['presence': (resp ? "present" : "not present"), 'ap': (resp ? resp.data[0].ap_mac : "unknown")])
+    def states = 
+        [
+            presence: (resp ? "present" : "not present"),
+            ap: (resp ? resp?.data[0]?.ap_mac : "unknown"),
+            switch: (false == resp?.data?.getAt(0)?.blocked) ? "on" : null
+        ]
+    
+    findChildDevice(mac)?.refreshFromParent(states)
 }
 
 def setCookie(cookie)
@@ -755,7 +784,8 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
                 refreshCookie()                
                 
                 // update with new Auth token
-                params['headers']['Cookie'] = "${getCookie()}"
+                params['headers']['Cookie'] = getCookie()
+                params['headers']['X-CSRF-Token'] = getCsrf()
                 
                 // workaround for bug?
                 if(null == params['ignoreSSLIssues'])
