@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
 1.0.6 - tomw - Add "Refresh interval" option to work around recent UniFi controller reliability issues
 1.0.0 - tomw - Initial release
 
@@ -30,6 +31,10 @@ metadata
         capability "Initialize"
         capability "PresenceSensor"
         capability "Refresh"
+        capability "Switch"
+        
+        command "on", [[name: "allow network connection", type:"BOOL", description:"allow network connection"]]
+        command "off", [[name: "disallow network connection", type:"BOOL", description:"disallow network connection"]]   
         
         attribute "accessPoint", "string"
     }
@@ -102,18 +107,36 @@ def refreshFromParent(clientDetails)
 {
     logDebug("refreshFromParent(${clientDetails})")
     
-    switch(clientDetails?.presence)
-    {
-        case "present":
-            sendEvent(name: "presence", value: "present")
-            break
-        case "not present":
-            sendEvent(name: "presence", value: "not present")
-            break
-        default:
-            logDebug("no presence details found")
-            break
-    }
-    
+    sendEvent(name: "presence", value: clientDetails?.presence ?: "unknown")
     sendEvent(name: "accessPoint", value: (clientDetails?.ap ?: "unknown"))
+    
+    if(clientDetails?.switch)
+    {
+        sendEvent(name: "switch", value: clientDetails.switch)
+    }
+}
+
+def allowDevice(allow)
+{
+    def cmd = allow ? "unblock-sta" : "block-sta"
+    def mac = device.getSetting("clientMAC")
+    
+    if(parent.writeDeviceMacCmd(mac, cmd))
+    {
+        sendEvent(name: "switch", value: allow ? "on" : "off")
+    }
+    else
+    {
+        logDebug("allowDevice failed for client: ${mac}")
+    }
+}
+
+def on()
+{
+    allowDevice(true)
+}
+
+def off()
+{
+    allowDevice(false)
 }

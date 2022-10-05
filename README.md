@@ -26,9 +26,11 @@ Special thanks to @snell for their collaboration and @Bago for their troubleshoo
 
 # Usage instructions:
 
-* Use createClientDevice to create specific network clients to track for PresenceSensor
+* Use `createClientDevice` to create specific network clients to track for PresenceSensor
     * *name* is the display name of the child device.  It does not have a connection to the hostname or other aspects of the client or controller.
     * *mac* should be specific in all lower-case and with colons separating the octets.  Example:  a1:b2:3c:4d:be:ef
+* Use the `on` command on a child to allow network connection and `off` to disallow network connection.
+    * This is useful for managing whether a specific device can connect to your network.
 
 # Disclaimer
 
