@@ -685,59 +685,33 @@ def getWasExpectedClose()
 {
     return state.wasExpectedClose
 }
-    
-def httpGetExec(params)
-{
-    logDebug("httpGetExec(${params})")
-    
-    def result
-    httpGet(params)
-    { resp ->
-        if (resp)
-        {
-            //logDebug("resp.data = ${resp.data}")
-            result = resp
-        }
-    }
-    return result
-}
-
-def httpPostExec(params)
-{
-    logDebug("httpPostExec(${params})")
-    
-    def result
-    httpPost(params)
-    { resp ->
-        if (resp)
-        {
-            //logDebug("resp.data = ${resp.data}")
-            result = resp
-        }
-    }
-    return result
-}
 
 def httpExec(operation, params)
-{
-    def res
+{    
+    def result = null
+    
+    logDebug("httpExec(${operation}, ${params})")
+    
+    def httpClosure = 
+    { resp ->
+        result = resp
+        //logDebug("result.data = ${result.data}")
+    }
+    
+    def httpOp
     
     switch(operation)
     {
-        default:
-            logDebug("unsupported Http operation")
-            break
-        
         case "POST":
-            res = httpPostExec(params)
+            httpOp = this.delegate.&httpPost
             break
-        
         case "GET":
-            res = httpGetExec(params)
+            httpOp = this.delegate.&httpGet
             break
     }
     
-    return res
+    httpOp(params, httpClosure)
+    return result
 }
 
 def httpExecWithAuthCheck(operation, params, throwToCaller = false)
@@ -745,7 +719,7 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
     def res
     try
     {
-        res = httpExec(operation, params)                
+        res = httpExec(operation, params)
         return res
     }
     catch(groovyx.net.http.HttpResponseException e)
