@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.8 - tomw - Bugfixes for HTTP error handling
 1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
 1.0.5 - tomw - Bugfixes for websocket error handling.
 1.0.4 - tomw - Improved websocket error handling.
@@ -114,6 +115,7 @@ def initialize()
         
         // lag for cookies to stabilize
         runIn(2, initializeChildren)
+        runIn(4, refresh)
         
         // run this to populate a full list of known clients
         //runIn(4, queryKnownClients)
@@ -314,17 +316,8 @@ def refreshCookie()
 
 def invalidateCookie()
 {
-    try
-    {
-        logout()        
-        sendEvent(name: "commStatus", value: "good")
-    }
-    catch (Exception e)
-    {
-        logDebug("invalidateCookie() failed: ${e.message}")
-        sendEvent(name: "commStatus", value: "error")
-        // don't throw to caller, because this should always appear to succeed
-    }
+    logout() 
+    sendEvent(name: "commStatus", value: "unknown")
 }
 
 def isUniFiOS()
@@ -495,7 +488,7 @@ def login()
 {
     try
     {
-        def resp = httpExec("POST", genParamsAuth("login"), true)
+        def resp = httpExec("POST", genParamsAuth("login"))
         
         def cookie
         def csrf
@@ -522,7 +515,7 @@ def login()
         setCookie(cookie)
         setCsrf(csrf)
     }
-    catch (Exception e)
+    catch(groovyx.net.http.HttpResponseException e)
     {
         logDebug("login() failed: ${e.message}")
         throw(e)
@@ -532,8 +525,14 @@ def login()
 
 def logout()
 {
-    // swallow exceptions on logout()
-    httpExec("POST", genParamsAuth("logout"), false)
+    try
+    {
+        httpExec("POST", genParamsAuth("logout"))
+    }
+    catch(groovyx.net.http.HttpResponseException e)
+    {
+        // swallow exceptions on logout()
+    }
 }
 
 def querySelf()
@@ -686,83 +685,33 @@ def getWasExpectedClose()
 {
     return state.wasExpectedClose
 }
-    
-def httpGetExec(params, throwToCaller = false)
-{
-    logDebug("httpGetExec(${params})")
-    
-    try
-    {
-        def result
-        httpGet(params)
-        { resp ->
-            if (resp)
-            {
-                //logDebug("resp.data = ${resp.data}")
-                result = resp
-            }
-        }
-        return result
-    }
-    catch (Exception e)
-    {
-        logDebug("httpGetExec() failed: ${e.message}")
-        logDebug("status = ${e.getResponse().getStatus().toInteger()}")
-        if(throwToCaller)
-        {
-            throw(e)
-        }
-    }
-}
 
-def httpPostExec(params, throwToCaller = false)
-{
-    logDebug("httpPostExec(${params})")
+def httpExec(operation, params)
+{    
+    def result = null
     
-    try
-    {
-        def result
-        httpPost(params)
-        { resp ->
-            if (resp)
-            {
-                //logDebug("resp.data = ${resp.data}")
-                result = resp
-            }
-        }
-        return result
+    logDebug("httpExec(${operation}, ${params})")
+    
+    def httpClosure = 
+    { resp ->
+        result = resp
+        //logDebug("result.data = ${result.data}")
     }
-    catch (Exception e)
-    {
-        logDebug("httpPostExec() failed: ${e.message}")
-        logDebug("status = ${e.getResponse().getStatus().toInteger()}")
-        if(throwToCaller)
-        {
-            throw(e)
-        }
-    }
-}
-
-def httpExec(operation, params, throwToCaller = false)
-{
-    def res
+    
+    def httpOp
     
     switch(operation)
     {
-        default:
-            logDebug("unsupported Http operation")
-            break
-        
         case "POST":
-            res = httpPostExec(params, throwToCaller)
+            httpOp = this.delegate.&httpPost
             break
-        
         case "GET":
-            res = httpGetExec(params, throwToCaller)
+            httpOp = this.delegate.&httpGet
             break
     }
     
-    return res
+    httpOp(params, httpClosure)
+    return result
 }
 
 def httpExecWithAuthCheck(operation, params, throwToCaller = false)
@@ -770,10 +719,10 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
     def res
     try
     {
-        res = httpExec(operation, params, true)                
+        res = httpExec(operation, params)
         return res
     }
-    catch (Exception e)
+    catch(groovyx.net.http.HttpResponseException e)
     {
         if(e.getResponse().getStatus().toInteger() == 401)
         {
@@ -793,24 +742,25 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
                     params['ignoreSSLIssues']= true
                 }
                 
-                res = httpExec(operation, params, true)
+                res = httpExec(operation, params)
                 return res
             }
             catch (Exception e2)
             {
                 logDebug("httpExecWithAuthCheck() failed: ${e2.message}")
-                if(throwToCaller)
-                {
-                    throw(e2)
-                }
+                if(throwToCaller) { throw(e2) }
             }
         }
         else
         {
-            if(throwToCaller)
-            {
-                throw(e)
-            }
+            if(throwToCaller) { throw(e) }
         }
+    }
+    catch(Exception e)
+    {
+        logDebug("httpExecWithAuthCheck() unknown error: ${e}")
+        sendEvent(name: "commStatus", value: "error")
+        
+        if(throwToCaller) { throw(e) }
     }
 }
