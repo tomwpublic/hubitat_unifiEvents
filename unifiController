@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.9 - tomw - Removed redundant refresh scheduling
 1.0.8 - tomw - Bugfixes for HTTP error handling
 1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
 1.0.5 - tomw - Bugfixes for websocket error handling.
@@ -152,6 +153,8 @@ def uninstalled()
 
 def refresh()
 {
+    unschedule(refresh)
+    
     refreshChildren()
     
     // schedule next refresh
