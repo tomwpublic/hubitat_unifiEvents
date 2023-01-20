@@ -18,6 +18,7 @@ limitations under the License.
 
 Change history:
 
+1.0.9 - tomw - Removed redundant refresh scheduling
 1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
 1.0.6 - tomw - Add "Refresh interval" option to work around recent UniFi controller reliability issues
 1.0.0 - tomw - Initial release
@@ -48,7 +49,6 @@ preferences
     }
     section
     {
-        input "refreshInterval", "number", title: "Refresh interval in seconds (enter 0 to disable polling)", defaultValue: 60
         input name: "logEnable", type: "bool", title: "Enable debug logging", defaultValue: false
     }
 }
@@ -82,14 +82,7 @@ def initialize()
 
 def refresh()
 {
-    unschedule(refresh)
-    
     parent.refreshFromChild(device.getSetting("clientMAC"))
-    
-    if(refreshInterval && 0 != refreshInterval)
-    {        
-        runIn(refreshInterval, refresh)
-    }
 }
 
 def setupFromParent(clientDetails)
@@ -97,7 +90,6 @@ def setupFromParent(clientDetails)
     if(clientDetails)
     {
         device.updateSetting("clientMAC", clientDetails?.mac)
-        device.updateSetting("refreshInterval", 60)
         
         updated()
     }
