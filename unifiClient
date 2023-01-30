@@ -30,7 +30,6 @@ metadata
 {
     definition(name: "UniFi Client", namespace: "tomw", author: "tomw", importUrl: "")
     {
-        capability "Initialize"
         capability "PresenceSensor"
         capability "Refresh"
         capability "Switch"
@@ -71,14 +70,6 @@ def updated()
 def configure()
 {
     state.clear()
-    initialize()
-}
-
-def initialize()
-{
-    sendEvent(name: "presence", value: "unknown")
-    sendEvent(name: "accessPoint", value: "unknown")
-    
     refresh()
 }
 
@@ -91,9 +82,10 @@ def setupFromParent(clientDetails)
 {
     if(clientDetails)
     {
+        device.setDeviceNetworkId(parent?.childDni(clientDetails?.mac))
         device.updateSetting("clientMAC", clientDetails?.mac)
         
-        updated()
+        refresh()
     }
 }
 
