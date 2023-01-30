@@ -18,11 +18,11 @@ limitations under the License.
 
 Change history:
 
-1.1.0 - tomw - Support re-using child device (through updating Device MAC setting) if physical device changes
-1.0.9 - tomw - Removed redundant refresh scheduling
-1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
-1.0.6 - tomw - Add "Refresh interval" option to work around recent UniFi controller reliability issues
-1.0.0 - tomw - Initial release
+1.0.10 - tomw - Support re-using child device (through updating Device MAC setting) if physical device changes
+1.0.9  - tomw - Removed redundant refresh scheduling
+1.0.7  - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
+1.0.6  - tomw - Add "Refresh interval" option to work around recent UniFi controller reliability issues
+1.0.0  - tomw - Initial release
 
 */
 
