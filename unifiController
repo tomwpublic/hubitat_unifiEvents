@@ -18,15 +18,16 @@ limitations under the License.
 
 Change history:
 
-1.0.9 - tomw - Removed redundant refresh scheduling
-1.0.8 - tomw - Bugfixes for HTTP error handling
-1.0.7 - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
-1.0.5 - tomw - Bugfixes for websocket error handling.
-1.0.4 - tomw - Improved websocket error handling.
-1.0.3 - tomw - Added websocket error handling to help ensure uptime of connection.
-1.0.2 - tomw - Fix bug with repeated retries on failed login.
-1.0.1 - tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
-1.0.0 - tomw - Initial release
+1.0.10 - tomw - Support re-using child device (through updating Device MAC setting) if physical device changes
+1.0.9  - tomw - Removed redundant refresh scheduling
+1.0.8  - tomw - Bugfixes for HTTP error handling
+1.0.7  - tomw - Add MAC-based device commands.  Add on/off to client devices for blocking access to network.
+1.0.5  - tomw - Bugfixes for websocket error handling.
+1.0.4  - tomw - Improved websocket error handling.
+1.0.3  - tomw - Added websocket error handling to help ensure uptime of connection.
+1.0.2  - tomw - Fix bug with repeated retries on failed login.
+1.0.1  - tomw - Added option to log all incoming events.  Added guest clients to list of supported connect/disconnect events for presence.
+1.0.0  - tomw - Initial release
 
 */
 
@@ -115,8 +116,7 @@ def initialize()
         refreshCookie()
         
         // lag for cookies to stabilize
-        runIn(2, initializeChildren)
-        runIn(4, refresh)
+        runIn(2, refresh)
         
         // run this to populate a full list of known clients
         //runIn(4, queryKnownClients)
@@ -133,14 +133,6 @@ def initialize()
         sendEvent(name: "commStatus", value: "error")
         
         reinitialize()
-    }
-}
-
-def initializeChildren()
-{
-    for(child in getChildDevices())
-    {
-        child.initialize()
     }
 }
 
