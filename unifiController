@@ -161,9 +161,15 @@ def refreshChildren()
     }
 }
 
-def writeDeviceMacCmd(mac, cmd, manager = "stamgr")
+def writeDeviceMacCmd(mac, cmd, manager = "stamgr", Map addlParams = null)
 {
-    def body = groovy.json.JsonOutput.toJson([mac: mac, cmd: cmd])
+    def body = [mac: mac, cmd: cmd]    
+    // addlParams, if present, is like [port_idx: 8]
+    if(addlParams) { body += addlParams }
+    
+    body = groovy.json.JsonOutput.toJson(body)
+    
+    logDebug("writeDeviceMacCmd(mac: ${mac}, body: ${body}, manager: ${manager})")    
     def params = genParamsMain("cmd/${manager}", body)
     
     return httpExecWithAuthCheck("POST", params)
