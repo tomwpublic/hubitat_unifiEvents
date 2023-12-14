@@ -17,7 +17,7 @@ limitations under the License.
 -------------------------------------------
 
 Change history:
-
+1.0.11 - tomw - Bugfix for UniFi OS 3.2.x
 1.0.10 - tomw - Support re-using child device (through updating Device MAC setting) if physical device changes
 1.0.9  - tomw - Removed redundant refresh scheduling
 1.0.8  - tomw - Bugfixes for HTTP error handling
@@ -342,16 +342,23 @@ def isUniFiOS()
     
     try
     {
-        // check for UniFi OS        
-        httpPost([uri: "https://${controllerIP}:${(customPort ? customPortNum : 443)}", ignoreSSLIssues: true])
+        // check for UniFi OS by hitting an endpoint that should exist
+        def uri = "https://${controllerIP}:${(customPort ? customPortNum : 443)}/proxy/network/api/s/default/self"
+        httpPost([uri: uri, ignoreSSLIssues: true])
         { resp -> if(resp.getStatus().toInteger() == 200) { isUniFiOS = true } }
         
         // ok to fall through
     }
+    catch(groovyx.net.http.HttpResponseException e)
+    {
+        // if this was a 401, it means the URL was valid but the auth wasn't (as expected at this point)
+        if(e.getResponse()?.getStatus()?.toInteger() == 401) { isUniFiOS = true }
+        else { log.error "UniFi OS check failed: ${e.getResponse()?.getStatus()}" }
+    }
     catch(Exception e)
     {
         //logDebug("isUniFiOS() check #2 failed: ${e.toString()}")
-        // failed, and we know both failed so consider warning user accordingly
+        // failed again, and we have no idea why
     }
     
     return isUniFiOS
@@ -393,6 +400,16 @@ def genParamsAuth(operation)
     return params
 }
 
+def csrfTokenNameToMatch()
+{
+    return "X-CSRF-Token".toUpperCase()
+}
+
+def csrfTokenNameToSend()
+{
+    return "X-CSRF-Token"
+}
+
 def genParamsMain(suffix, body = null)
 {
     def params =
@@ -401,7 +418,7 @@ def genParamsMain(suffix, body = null)
             headers:
             [
                 Cookie: getCookie(),
-                'X-CSRF-Token': getCsrf()
+                (csrfTokenNameToSend()): getCsrf()
             ],
             ignoreSSLIssues: true,
         ]
@@ -506,7 +523,7 @@ def login()
                 csrf = it.value.split(';')?.getAt(0)?.split('=')?.getAt(1)
             }
             
-            if(it.name == "X-CSRF-Token")
+            if(it.name.toString()?.toUpperCase() == csrfTokenNameToMatch())
             {
                 // this is probably a controller on UniFi OS
                 csrf = it.value
@@ -725,7 +742,7 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
     }
     catch(groovyx.net.http.HttpResponseException e)
     {
-        if(e.getResponse().getStatus().toInteger() == 401)
+        if(e.getResponse()?.getStatus()?.toInteger() == 401)
         {
             // 401 Unauthorized
             try
@@ -735,7 +752,7 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
                 
                 // update with new Auth token
                 params['headers']['Cookie'] = getCookie()
-                params['headers']['X-CSRF-Token'] = getCsrf()
+                params['headers'][csrfTokenNameToSend()] = getCsrf()
                 
                 // workaround for bug?
                 if(null == params['ignoreSSLIssues'])
