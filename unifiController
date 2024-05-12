@@ -17,6 +17,7 @@ limitations under the License.
 -------------------------------------------
 
 Change history:
+1.0.12 - tomw - Bugfix for UniFi OS 4.0.x
 1.0.11 - tomw - Bugfix for UniFi OS 3.2.x
 1.0.10 - tomw - Support re-using child device (through updating Device MAC setting) if physical device changes
 1.0.9  - tomw - Removed redundant refresh scheduling
@@ -70,20 +71,16 @@ preferences
     }
 }
 
+import groovy.transform.Field
+
 def logDebug(msg) 
 {
-    if (logEnable)
-    {
-        log.debug(msg)
-    }
+    if (logEnable) { log.debug(msg) }
 }
 
 def logEvent(msg)
 {
-    if (logEvents)
-    {
-        sendEvent(name: "eventStream", value: msg)
-    }
+    if (logEvents) { sendEvent(name: "eventStream", value: msg) }
 }
 
 def updated()
@@ -138,8 +135,7 @@ def initialize()
 
 def uninstalled()
 {
-    unschedule()
-    
+    unschedule()    
     invalidateCookie()
 }
 
@@ -175,7 +171,11 @@ def writeDeviceMacCmd(mac, cmd, manager = "stamgr", Map addlParams = null)
     return httpExecWithAuthCheck("POST", params)
 }
 
-def parse(String message)
+@Field List connectingEvents = ["EVT_WU_Connected", "EVT_LU_Connected", "EVT_WG_Connected", "EVT_LG_Connected"]
+@Field List disconnectingEvents = ["EVT_WU_Disconnected", "EVT_LU_Disconnected", "EVT_WG_Disconnected", "EVT_LG_Disconnected"]
+@Field List allConnectionEvents = connectingEvents + disconnectingEvents
+
+void parse(String message)
 {
     //logDebug("parse: ${message}")
     try
@@ -186,22 +186,12 @@ def parse(String message)
         {
             // log all events (if enabled)
             logEvent(message)
-        }        
+        }
         
         for(thisMsg in msgJson?.data)
         {
             // connected/disconnected events, for client presence status
-            if(thisMsg.key in
-               [
-                "EVT_WU_Connected",
-                "EVT_WU_Disconnected",
-                "EVT_LU_Connected",
-                "EVT_LU_Disconnected",
-                "EVT_WG_Connected",
-                "EVT_WG_Disconnected",
-                "EVT_LG_Connected",
-                "EVT_LG_Disconnected"
-               ])
+            if(thisMsg.key in allConnectionEvents)
             {
                 //logDebug("connection observed!")
                 
@@ -216,7 +206,7 @@ def parse(String message)
                 {
                     child.refreshFromParent(
                         [
-                            presence: ((thisMsg.key in ["EVT_WU_Connected", "EVT_LU_Connected", "EVT_WG_Connected", "EVT_LG_Connected"]) ? "present" : "not present"),
+                            presence: ((thisMsg.key in connectingEvents) ? "present" : "not present"),
                             ap: (thisMsg.ap ?: "unknown")
                         ])
                 }
@@ -240,28 +230,23 @@ def webSocketStatus(String message)
         
         state.reconnectDelay = 1
         setWasExpectedClose(false)
-        
-        return
     }
     else if(message.startsWith("status: closing"))
     {
         sendEvent(name: "commStatus", value: "no events")
+        
         if(getWasExpectedClose())
         {
             setWasExpectedClose(false)
             return
         }
-        
         reinitialize()
-        
-        return
     }
     else if(message.startsWith("failure:"))
     {
         sendEvent(name: "commStatus", value: "error")        
-        reinitialize()
         
-        return
+        reinitialize()
     }
 }
 
@@ -364,22 +349,6 @@ def isUniFiOS()
     return isUniFiOS
 }
 
-def checkCommStatus()
-{
-    switch(device.currentValue("commStatus"))
-    {
-        case "good":
-            logDebug("checkCommStatus() success")
-            return true
-        
-        case "error":
-        case "unknown":
-        default:
-            logDebug("checkCommStatus() failed")
-            return false
-    }
-}
-
 def genParamsAuth(operation)
 {
     def body = [username: username, password: password, strict: true]
@@ -400,15 +369,19 @@ def genParamsAuth(operation)
     return params
 }
 
-def csrfTokenNameToMatch()
+boolean isCsrfTokenName(String hdrName)
 {
-    return "X-CSRF-Token".toUpperCase()
+    return (hdrName?.toUpperCase() == "X-CSRF-Token".toUpperCase())
 }
 
-def csrfTokenNameToSend()
+def csrfTokenNameToSend() { return "X-CSRF-Token" }
+
+boolean isCookieHeaderName(String hdrName)
 {
-    return "X-CSRF-Token"
+    return (hdrName?.toUpperCase() == "Set-Cookie".toUpperCase())
 }
+
+def cookieNameToSend() { return "Cookie" }
 
 def genParamsMain(suffix, body = null)
 {
@@ -417,7 +390,7 @@ def genParamsMain(suffix, body = null)
             uri: getBaseURI() + getAPISuffix() + suffix,
             headers:
             [
-                Cookie: getCookie(),
+                (cookieNameToSend()): getCookie(),
                 (csrfTokenNameToSend()): getCsrf()
             ],
             ignoreSSLIssues: true,
@@ -435,7 +408,7 @@ def genHeadersWss()
 {
     def headers =
         [
-            Cookie: "${getCookie()}",
+            (cookieNameToSend()): "${getCookie()}",
             'User-Agent': "UniFi Events"
         ]
     
@@ -444,62 +417,29 @@ def genHeadersWss()
 
 def getBaseURI()
 {
-    if(!getUniFiOS())
-    {
-        return "https://${controllerIP}:${(customPort ? customPortNum : 8443)}/"
-    }
-    else
-    {
-        return "https://${controllerIP}:${(customPort ? customPortNum : 443)}/"
-    }
+    return getUniFiOS() ? "https://${controllerIP}:${(customPort ? customPortNum : 443)}/" :
+                            "https://${controllerIP}:${(customPort ? customPortNum : 8443)}/"
 }
 
 def getLoginSuffix()
 {
-    if(!getUniFiOS())
-    {
-        return "api/login"
-    }
-    else
-    {
-        return "api/auth/login"
-    }
+    return getUniFiOS() ? "api/auth/login" : "api/login"
 }
 
 def getLogoutSuffix()
 {
-    if(!getUniFiOS())
-    {
-        return "api/logout"
-    }
-    else
-    {
-        return "api/auth/logout"
-    }
+    return getUniFiOS() ? "api/auth/logout" : "api/logout"
 }
 
 def getAPISuffix()
 {
-    if(!getUniFiOS())
-    {
-        return "api/s/${siteName}/"
-    }
-    else
-    {
-        return "proxy/network/api/s/${siteName}/"
-    }
+    return getUniFiOS() ? "proxy/network/api/s/${siteName}/" : "api/s/${siteName}/"
 }
 
 def getWssURI(site)
 {
-    if(!getUniFiOS())
-    {
-        return "wss://${controllerIP}:${(customPort ? customPortNum : 8443)}/wss/s/${site}/events"
-    }
-    else
-    {
-        return "wss://${controllerIP}:${(customPort ? customPortNum : 443)}/proxy/network/wss/s/${site}/events"
-    }
+    return getUniFiOS() ? "wss://${controllerIP}:${(customPort ? customPortNum : 443)}/proxy/network/wss/s/${site}/events" :
+                            "wss://${controllerIP}:${(customPort ? customPortNum : 8443)}/wss/s/${site}/events"
 }
 
 def login()
@@ -512,21 +452,21 @@ def login()
         def csrf
         resp?.getHeaders()?.each
         {
-            if(["unifises", "TOKEN"].contains(it.value?.split('=')?.getAt(0)?.toString()))
-            {
-                cookie = it?.value?.split(';')?.getAt(0)
-            }
+            //logDebug("header: ${it.getName()} == ${it.getValue()}")
             
-            if(it.value?.split('=')?.getAt(0)?.toString() == "csrf_token")
+            if(isCookieHeaderName(it.getName()?.toString()))
             {
-                // this is probably a controller NOT on UniFi OS
-                csrf = it.value.split(';')?.getAt(0)?.split('=')?.getAt(1)
+                cookie = it.getValue()?.split(';')?.getAt(0)
             }
-            
-            if(it.name.toString()?.toUpperCase() == csrfTokenNameToMatch())
+            else if(isCsrfTokenName(it.getName()?.toString()))
             {
                 // this is probably a controller on UniFi OS
                 csrf = it.value
+            }            
+            else if(it.value?.split('=')?.getAt(0)?.toString() == "csrf_token")
+            {
+                // this is probably a controller NOT on UniFi OS
+                csrf = it.value.split(';')?.getAt(0)?.split('=')?.getAt(1)
             }
         }
         
@@ -537,8 +477,7 @@ def login()
     {
         logDebug("login() failed: ${e.message}")
         throw(e)
-    }
-    
+    }    
 }
 
 def logout()
@@ -553,69 +492,64 @@ def logout()
     }
 }
 
-def querySelf()
+def runQuery(suffix, throwToCaller = false)
 {
     try
     {
-        def resp = httpExecWithAuthCheck("GET", genParamsMain("self"), true)
-        logDebug("${resp.data}")
+        def resp = httpExecWithAuthCheck("GET", genParamsMain(suffix), true)
+        //logDebug("${resp?.data}")
+        return resp
     }
     catch (Exception e)
     {
-        sendEvent(name: "commStatus", value: "error")
+        if(!throwToCaller)
+        {
+            logDebug(e)
+            
+            // if the caller isn't handling this, set the commStatus here
+            sendEvent(name: "commStatus", value: "error")
+            return
+        }
+        
         throw e
-    }   
+    }
 }
 
 def queryActiveClients()
 {
-    try
-    {
-        def resp = httpExecWithAuthCheck("GET", genParamsMain("stat/sta"), true)
-        logDebug("${resp.data}")
-        
-        // collect all of the MACs
-        state.currentMacList = []
-        resp.data.data.collect {thisClient -> state.currentMacList.add(thisClient.mac)}
-    }
-    catch (Exception e)
-    {
-        sendEvent(name: "commStatus", value: "error")
-        throw e
-    }   
+    def resp = runQuery("stat/sta")
+    def currentMacList = []
+    resp?.data?.data?.collect {thisClient -> currentMacList.add(thisClient.mac)}
+    
+    state.currentMacList = currentMacList
 }
 
 def queryKnownClients()
 {
-    try
-    {
-        def resp = httpExecWithAuthCheck("GET", genParamsMain("rest/user"), true)
-        logDebug("${resp.data}")
-        
-        // collect all of the MACs
-        state.knownMacList = []
-        resp.data.data.collect {thisClient -> state.knownMacList.add(thisClient.mac)}
-    }
-    catch (Exception e)
-    {
-        sendEvent(name: "commStatus", value: "error")
-        throw e
-    }   
+    def resp = runQuery("rest/user")
+    def knownMacList = []
+    resp?.data?.data?.collect {thisClient -> knownMacList.add(thisClient.mac)}
+    
+    state.knownMacList = knownMacList
 }
 
 def queryClientByMac(mac)
 {
     try
     {
-        def resp = httpExecWithAuthCheck("GET", genParamsMain("stat/sta/${mac}"), true)
-        logDebug("${resp.data}")
-        return resp.data
+        def resp = runQuery("stat/sta/${mac}", true)
+        return resp?.data
     }
-    catch (Exception e)
+    catch(groovyx.net.http.HttpResponseException e)
     {
-        //client is presumably offline -- which returns error 400
-        return null
-    }   
+        if(e.getResponse()?.getStatus()?.toInteger() == 400)
+        {
+            // this is the response when a client is offline
+            return
+        }
+        else { logDebug("queryClientByMac(${mac}) error: ${e}") }
+    }
+    catch(Exception e) { logDebug("queryClientByMac(${mac}) error: ${e}") }
 }
 
 def childName(name)
@@ -664,45 +598,21 @@ def refreshFromChild(mac)
     findChildDevice(mac)?.refreshFromParent(states)
 }
 
-def setCookie(cookie)
-{
-    state.cookie = cookie
-}
+def setCookie(cookie) { state.cookie = cookie }
 
-def getCookie()
-{
-    return state.cookie
-}
+def getCookie() { return state.cookie }
 
-def setCsrf(csrf)
-{
-    state.csrf = csrf
-}
+def setCsrf(csrf) { state.csrf = csrf }
 
-def getCsrf()
-{
-    return state.csrf
-}
+def getCsrf() { return state.csrf }
 
-def setUniFiOS(isUniFiOS)
-{
-    state.UniFiOS = isUniFiOS
-}
+def setUniFiOS(isUniFiOS) { state.UniFiOS = isUniFiOS }
 
-def getUniFiOS()
-{
-    return state.UniFiOS
-}
+def getUniFiOS() { return state.UniFiOS }
 
-def setWasExpectedClose(wasExpected)
-{
-    state.wasExpectedClose = wasExpected
-}
+def setWasExpectedClose(wasExpected) { state.wasExpectedClose = wasExpected }
 
-def getWasExpectedClose()
-{
-    return state.wasExpectedClose
-}
+def getWasExpectedClose() { return state.wasExpectedClose }
 
 def httpExec(operation, params)
 {    
@@ -751,7 +661,7 @@ def httpExecWithAuthCheck(operation, params, throwToCaller = false)
                 refreshCookie()                
                 
                 // update with new Auth token
-                params['headers']['Cookie'] = getCookie()
+                params['headers'][cookieNameToSend()] = getCookie()
                 params['headers'][csrfTokenNameToSend()] = getCsrf()
                 
                 // workaround for bug?
